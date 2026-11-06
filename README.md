@@ -26,6 +26,11 @@ npm run dev      # 개발 서버 (http://localhost:5173)
 npm run build    # dist/ 에 정적 파일 생성 → Vercel, Netlify, GitHub Pages 등에 그대로 배포
 ```
 
+## 배포
+
+`master` 브랜치에 푸시하면 GitHub Actions가 자동으로 빌드해서 GitHub Pages에 배포합니다
+(`.github/workflows/deploy.yml`). 처음 한 번은 저장소 **Settings → Pages → Source**를 **GitHub Actions**로 설정해야 합니다.
+
 ## 구조
 
 | 파일 | 역할 |
