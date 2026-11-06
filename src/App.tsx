@@ -206,10 +206,16 @@ export default function App() {
       }}
     >
       <header>
-        <h1>🎵 음원 편집기</h1>
+        <div className="brand">
+          <div className="logo">🎵</div>
+          <div>
+            <h1>음원 편집기</h1>
+            <p className="subtitle">자르고, 잇고, 부드럽게. 내 브라우저에서 바로.</p>
+          </div>
+        </div>
         <div className="row">
-          <button onClick={undo} disabled={!canUndo} title="Ctrl+Z">↶ 실행 취소</button>
-          <button onClick={redo} disabled={!canRedo} title="Ctrl+Shift+Z">↷ 다시 실행</button>
+          <button className="ghost" onClick={undo} disabled={!canUndo} title="Ctrl+Z">↶ 되돌리기</button>
+          <button className="ghost" onClick={redo} disabled={!canRedo} title="Ctrl+Shift+Z">↷ 다시하기</button>
           <button className="primary" onClick={() => fileInput.current?.click()}>＋ 음원 추가</button>
           <input ref={fileInput} type="file" accept="audio/*" multiple hidden onChange={(e) => e.target.files && addFiles(e.target.files).then(() => (e.target.value = ''))} />
         </div>
@@ -223,15 +229,24 @@ export default function App() {
       {loading && <p className="busy">{loading}</p>}
 
       {!clips.length ? (
-        <button className="dropzone" onClick={() => fileInput.current?.click()}>
-          <span className="big">🎶</span>
-          <b>음원 파일을 여기로 끌어다 놓거나 눌러서 선택하세요</b>
-          <span className="muted">mp3, wav, m4a, ogg, flac · 여러 개를 한 번에 올리면 순서대로 이어 붙여져요</span>
-          <span className="muted">파일은 서버로 전송되지 않고 내 브라우저에서만 처리돼요</span>
-        </button>
+        <>
+          <button className="dropzone" onClick={() => fileInput.current?.click()}>
+            <span className="step">1</span>
+            <span className="big-icon">🎶</span>
+            <b>음원 파일을 여기에 끌어다 놓으세요</b>
+            <span className="muted">또는 눌러서 선택 · mp3, wav, m4a, ogg, flac · 여러 개를 올리면 순서대로 이어져요</span>
+            <span className="muted">🔒 파일은 서버로 보내지 않고 내 브라우저에서만 처리돼요</span>
+          </button>
+          <div className="steps-guide">
+            <div><b>① 올리기</b>편집할 음원을 올려요</div>
+            <div><b>② 순서 정하기</b>여러 곡을 원하는 순서로 이어요</div>
+            <div><b>③ 다듬기</b>자르기 · 페이드 · 크로스페이드 · 빌드업</div>
+            <div><b>④ 저장하기</b>들어보고 MP3로 내려받아요</div>
+          </div>
+        </>
       ) : (
         <>
-          <Timeline clips={clips} sources={sources} selectedId={selectedId} onSelect={setSelectedId} onMove={moveClip} onDuplicate={duplicate} onDelete={remove} />
+          <Timeline clips={clips} sources={sources} selectedId={selectedId} onSelect={setSelectedId} onMove={moveClip} onDuplicate={duplicate} onDelete={remove} onAdd={() => fileInput.current?.click()} />
           {selected && selectedSource && (
             <ClipEditor
               key={selected.sourceId}

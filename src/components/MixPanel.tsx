@@ -25,9 +25,10 @@ export default function MixPanel({ mixUrl, stale, busy, onRender, onExport }: Pr
       container: box.current,
       url: mixUrl,
       height: 96,
-      waveColor: '#4d7c6f',
-      progressColor: '#7fd1b9',
-      cursorColor: '#ffd166',
+      waveColor: '#a8e6cf',
+      progressColor: '#4cbf95',
+      cursorColor: '#ff7a95',
+      cursorWidth: 2,
       barWidth: 2,
       barGap: 1,
       barRadius: 2,
@@ -48,18 +49,23 @@ export default function MixPanel({ mixUrl, stale, busy, onRender, onExport }: Pr
   return (
     <section className="panel">
       <div className="panel-head">
-        <h2>🎧 전체 미리듣기 & 내보내기</h2>
+        <h2>
+          <span className="step">4</span> 전체 듣고 저장하기
+        </h2>
         {mixUrl && <span className="muted">{fmt(time)} / {fmt(dur)}</span>}
       </div>
-      {mixUrl ? <div className="wave" ref={box} /> : <p className="muted">"합치기"를 누르면 모든 효과를 적용한 결과를 만들어서 들려줘요.</p>}
+      {mixUrl ? <div className="wave" ref={box} /> : <p className="hint">💡 "합쳐서 듣기"를 누르면 모든 클립과 효과를 하나로 합친 결과를 들어볼 수 있어요.</p>}
       {stale && mixUrl && <p className="warn">편집 내용이 바뀌었어요. 다시 합쳐야 최신 결과를 들을 수 있어요.</p>}
       <div className="row">
         <button className={stale || !mixUrl ? 'primary' : ''} onClick={onRender} disabled={!!busy}>
-          🔄 {mixUrl ? '다시 합치기' : '합치기'}
+          {mixUrl ? '🔄 다시 합치기' : '🎶 합쳐서 듣기'}
         </button>
         <button onClick={() => ws.current?.playPause()} disabled={!mixUrl || !!busy}>
           {playing ? '⏸ 일시정지' : '▶ 재생'}
         </button>
+      </div>
+      <div className="export-box">
+        <b>💾 저장</b>
         <span className="spacer" />
         <input className="name-input" value={name} onChange={(e) => setName(e.target.value)} aria-label="파일 이름" />
         <span className="muted">.mp3</span>
@@ -68,7 +74,7 @@ export default function MixPanel({ mixUrl, stale, busy, onRender, onExport }: Pr
           <option value={192}>192kbps (추천)</option>
           <option value={320}>320kbps (최고 음질)</option>
         </select>
-        <button className="primary" onClick={() => onExport(kbps, name.trim() || '편집본')} disabled={!!busy}>
+        <button className="primary big" onClick={() => onExport(kbps, name.trim() || '편집본')} disabled={!!busy}>
           ⬇️ MP3 다운로드
         </button>
       </div>

@@ -11,9 +11,10 @@ interface Props {
   onMove: (from: number, to: number) => void
   onDuplicate: (id: string) => void
   onDelete: (id: string) => void
+  onAdd: () => void
 }
 
-export default function Timeline({ clips, sources, selectedId, onSelect, onMove, onDuplicate, onDelete }: Props) {
+export default function Timeline({ clips, sources, selectedId, onSelect, onMove, onDuplicate, onDelete, onAdd }: Props) {
   const [dragFrom, setDragFrom] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState<number | null>(null)
   const { placed, total } = layout(clips, sources)
@@ -21,9 +22,11 @@ export default function Timeline({ clips, sources, selectedId, onSelect, onMove,
   return (
     <section className="panel">
       <div className="panel-head">
-        <h2>🎞️ 타임라인</h2>
+        <h2>
+          <span className="step">2</span> 순서 정하기
+        </h2>
         <span className="muted">
-          클립 {clips.length}개 · 전체 {fmt(total)} · 카드를 끌어서 순서를 바꿀 수 있어요
+          클립 {clips.length}개 · 전체 {fmt(total)} · 카드를 끌어서 순서를 바꿔요
         </span>
       </div>
 
@@ -47,11 +50,15 @@ export default function Timeline({ clips, sources, selectedId, onSelect, onMove,
           const tags = [
             c.fadeIn > 0 && `페이드인 ${c.fadeIn.toFixed(1)}s`,
             c.fadeOut > 0 && `페이드아웃 ${c.fadeOut.toFixed(1)}s`,
-            i > 0 && c.crossfade > 0 && `🔀 크로스페이드 ${c.crossfade.toFixed(1)}s`,
             c.buildUp.enabled && '💥 빌드업',
             c.gain !== 1 && `볼륨 ${Math.round(c.gain * 100)}%`,
           ].filter(Boolean) as string[]
-          return (
+          return [
+            i > 0 && (
+              <div className="link" key={`link-${c.id}`}>
+                {c.crossfade > 0 ? <span>🔀 {c.crossfade.toFixed(1)}s</span> : '→'}
+              </div>
+            ),
             <div
               key={c.id}
               className={`card c${i % 6} ${c.id === selectedId ? 'sel' : ''} ${dragOver === i ? 'over' : ''}`}
@@ -85,9 +92,13 @@ export default function Timeline({ clips, sources, selectedId, onSelect, onMove,
                 <button onClick={() => onDuplicate(c.id)} title="복제">⧉</button>
                 <button className="danger" onClick={() => onDelete(c.id)} title="삭제">🗑</button>
               </div>
-            </div>
-          )
+            </div>,
+          ]
         })}
+        <button className="add-card" onClick={onAdd}>
+          <span style={{ fontSize: 22 }}>＋</span>
+          음원 추가
+        </button>
       </div>
     </section>
   )
