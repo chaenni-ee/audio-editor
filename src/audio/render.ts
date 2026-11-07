@@ -73,8 +73,14 @@ function schedule(ctx: BaseAudioContext, p: Placed, out: AudioNode) {
     const lp = ctx.createBiquadFilter()
     lp.type = 'lowpass'
     lp.Q.value = 0.7
-    lp.frequency.setValueAtTime(500, at)
-    lp.frequency.exponentialRampToValueAtTime(20000, at + climax)
+    if (bu.mode === 'hold') {
+      // 클라이맥스 전까지 먹먹한 소리를 유지하다가 한 번에 선명하게
+      lp.frequency.setValueAtTime(700, at)
+      lp.frequency.setValueAtTime(20000, at + climax)
+    } else {
+      lp.frequency.setValueAtTime(500, at)
+      lp.frequency.exponentialRampToValueAtTime(20000, at + climax)
+    }
     node.connect(lp)
     node = lp
   }
@@ -90,7 +96,8 @@ function schedule(ctx: BaseAudioContext, p: Placed, out: AudioNode) {
   if (bu.enabled) {
     const g = ctx.createGain()
     const pause = bu.pauseBeforeDrop && climax > DROP_PAUSE * 3 ? DROP_PAUSE : 0
-    g.gain.setValueCurveAtTime(crescendo(bu.startVolume), at, climax - pause)
+    if (bu.mode === 'hold') g.gain.setValueAtTime(Math.max(MIN_START_VOLUME, Math.min(1, bu.startVolume)), at)
+    else g.gain.setValueCurveAtTime(crescendo(bu.startVolume), at, climax - pause)
     if (pause) g.gain.setValueAtTime(0, at + climax - pause + EPS)
     g.gain.setValueAtTime(1, at + climax + EPS)
     node.connect(g)

@@ -208,6 +208,7 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
     clip.gain !== 1 && `볼륨 ${Math.round(clip.gain * 100)}%`,
     !isFirst && clip.crossfade > 0 && '크로스페이드',
     bu.enabled && (presetActive ? '💒 결혼식 프리셋' : '💥 빌드업'),
+    bu.enabled && (bu.mode === 'hold' ? `🤫 ${Math.round(bu.startVolume * 100)}% 유지` : '📈 점점 커지게'),
   ].filter(Boolean) as string[]
 
   const applyWeddingPreset = () => {
@@ -217,6 +218,7 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
       buildUp: {
         enabled: true,
         climaxAt: Math.round(Math.min(dur * 0.55, Math.max(8, dur * 0.4)) * 10) / 10,
+        mode: bu.mode,
         startVolume: 0.3,
         muffle: true,
         pauseBeforeDrop: true,
@@ -319,10 +321,22 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
           <button className={presetActive ? 'applied' : ''} onClick={applyWeddingPreset}>
             {presetActive ? '✅ 결혼식 입장 프리셋 적용됨' : '💒 결혼식 입장 프리셋 적용하기'}
           </button>
-          <span className="muted">작고 먹먹하게 시작 → 점점 커지다가 → 잠깐 멈춘 뒤 확 터져요. 누르면 바로 이 클립에 적용돼요.</span>
+          <span className="muted">작고 먹먹하게 시작 → 잠깐 멈춘 뒤 확 터져요. 누르면 바로 이 클립에 적용돼요.</span>
         </div>
         {bu.enabled && (
           <>
+            <div className="mode-pick" role="radiogroup" aria-label="빌드업 방식">
+              <button role="radio" aria-checked={bu.mode !== 'hold'} className={bu.mode !== 'hold' ? 'on' : ''} onClick={() => setBu({ mode: 'rise' })}>
+                <b>📈 점점 커지게</b>
+                <small>작게 시작해서 클라이맥스까지 서서히 커지다가 팡</small>
+                <MiniGraph mode="rise" />
+              </button>
+              <button role="radio" aria-checked={bu.mode === 'hold'} className={bu.mode === 'hold' ? 'on' : ''} onClick={() => setBu({ mode: 'hold' })}>
+                <b>🤫 작게 유지하다가 팡</b>
+                <small>정한 볼륨으로 쭉 잔잔하게 유지하다가 클라이맥스에서 한 번에 팡</small>
+                <MiniGraph mode="hold" />
+              </button>
+            </div>
             <div className="grid2">
               <Slider
                 label="터지는 지점"
@@ -334,7 +348,16 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
                 note="파형 위 💥 선을 끌어도 돼요"
                 onChange={(v) => setBu({ climaxAt: v }, 'climax')}
               />
-              <Slider label="시작 볼륨" unit="%" value={Math.round(bu.startVolume * 100)} min={5} max={100} step={5} note="작을수록 터질 때 차이가 커요" onChange={(v) => setBu({ startVolume: v / 100 }, 'sv')} />
+              <Slider
+                label={bu.mode === 'hold' ? '클라이맥스 전까지 유지할 볼륨' : '시작 볼륨'}
+                unit="%"
+                value={Math.round(bu.startVolume * 100)}
+                min={5}
+                max={100}
+                step={5}
+                note={bu.mode === 'hold' ? '처음부터 클라이맥스 직전까지 이 볼륨으로 쭉 유지돼요' : '작을수록 터질 때 차이가 커요'}
+                onChange={(v) => setBu({ startVolume: v / 100 }, 'sv')}
+              />
             </div>
             <div className="row checks">
               <label className="chip">
@@ -351,6 +374,17 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
         )}
       </div>
     </section>
+  )
+}
+
+/** 빌드업 방식을 한눈에 보여주는 작은 볼륨 그래프 */
+function MiniGraph({ mode }: { mode: 'rise' | 'hold' }) {
+  const d = mode === 'rise' ? 'M2 30 C 30 29, 52 24, 66 16 L 68 30 L 72 30 L 72 4 L 98 4' : 'M2 22 L 68 22 L 68 30 L 72 30 L 72 4 L 98 4'
+  return (
+    <svg viewBox="0 0 100 34" className="mini-graph" aria-hidden="true">
+      <line x1="70" y1="0" x2="70" y2="34" className="mg-climax" />
+      <path d={d} className="mg-line" />
+    </svg>
   )
 }
 

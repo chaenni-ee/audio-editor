@@ -209,3 +209,14 @@ button.active { background: var(--pink-soft); border-color: var(--pink); color: 
 button.applied { background: var(--mint-soft); border-color: var(--mint); color: var(--mint-ink); font-weight: 600; }
 button.pulse { border-color: var(--pink); animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(232, 80, 122, 0.45); } 50% { box-shadow: 0 0 0 7px rgba(232, 80, 122, 0); } }
+
+/* 빌드업 방식 선택 */
+.mode-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 14px; }
+.mode-pick button { text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 16px; background: #fff; }
+.mode-pick button small { color: var(--muted); font-size: 12px; }
+.mode-pick button.on { border-color: var(--pink); background: var(--pink-soft); box-shadow: 0 0 0 3px rgba(255, 181, 200, 0.35); }
+.mode-pick button.on b { color: var(--pink-ink); }
+.mini-graph { width: 100%; height: 36px; margin-top: 4px; }
+.mg-line { fill: none; stroke: var(--lav-ink); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.mode-pick button.on .mg-line { stroke: #e8507a; }
+.mg-climax { stroke: #ff7a95; stroke-width: 1.5; stroke-dasharray: 3 3; }
