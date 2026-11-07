@@ -9,6 +9,7 @@
 - **페이드 인 / 아웃**, **클립별 볼륨**
 - **🎤 키 조절**: 빠르기는 그대로 두고 음높이만 반음 단위로 ±6키 (축가 MR 키 맞추기)
 - **이어 붙이기**: 타임라인에서 끌어서 순서 변경, 복제, 삭제
+- **🔁 인트로 늘리기** (사회자 멘트용): 노래가 터지는 지점과 빠르기(BPM)를 자동으로 찾아, 인트로 일부를 마디 단위로 반복해서 원하는 길이로 늘림
 - **크로스페이드**: 앞 곡이 작아지는 동안 다음 곡이 겹치며 커짐 (등전력 곡선)
 - **💥 빌드업 효과**: 잔잔하게 시작해서 클라이맥스에서 팡 터뜨리기
   - 방식 선택: 점점 커지게 / 작은 볼륨을 쭉 유지하다가 팡
@@ -38,6 +39,7 @@ npm run build    # dist/ 에 정적 파일 생성 → Vercel, Netlify, GitHub Pa
 | 파일 | 역할 |
 |---|---|
 | `src/audio/render.ts` | 클립 배치(크로스페이드 겹침), 페이드·빌드업 효과, OfflineAudioContext로 합치기 |
+| `src/audio/loop-core.ts`, `loop.ts` | 빠르기·박 위치·터지는 지점 감지, 마디 맞춤, 인트로 늘리기 |
 | `src/audio/pitch-core.ts`, `pitch.worker.ts` | SoundTouch로 키 변환 (Web Worker, 결과는 캐시) |
 | `src/audio/mp3.worker.ts` | lamejs로 MP3 인코딩 (Web Worker) |
 | `src/components/ClipEditor.tsx` | 파형(wavesurfer.js), 구간 선택, 효과 설정 |

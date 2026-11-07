@@ -230,3 +230,16 @@ button.pulse { border-color: var(--pink); animation: pulse 1s ease-in-out infini
 .key-val small { font-size: 11.5px; color: var(--muted); }
 button.small { padding: 4px 10px; font-size: 13px; }
 @media (max-width: 700px) { .groups { grid-template-columns: 1fr; } }
+
+/* 인트로 늘리기 */
+.intro { margin-top: 16px; padding: 16px; border-radius: 18px; background: linear-gradient(135deg, #e9faf2, #eef6ff); border: 1px solid #cdeee0; display: flex; flex-direction: column; gap: 12px; }
+.intro .panel-head { margin-bottom: 0; }
+.intro-steps { margin: 0; padding-left: 20px; font-size: 13.5px; display: flex; flex-direction: column; gap: 4px; }
+.mint-text { color: var(--mint-ink); }
+.intro-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.intro-card { background: #fff; border: 1.5px solid #cdeee0; border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.intro-card b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.intro-card small { color: var(--muted); font-size: 12px; }
+.bpm-row input { width: 84px; font: inherit; font-weight: 700; border: 1.5px solid var(--line-strong); border-radius: 10px; padding: 4px 8px; }
+.notice { background: var(--mint-soft); border: 1.5px solid var(--mint); color: var(--mint-ink); border-radius: 14px; padding: 10px 14px; margin: 0; cursor: pointer; font-weight: 600; }
+.found { margin: 0; background: #fff; border: 1.5px dashed var(--mint); color: var(--mint-ink); border-radius: 12px; padding: 8px 12px; font-size: 13.5px; font-weight: 600; }

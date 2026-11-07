@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import RegionsPlugin, { type Region } from 'wavesurfer.js/dist/plugins/regions.esm.js'
 import type { BuildUp, Clip, Source } from '../types'
@@ -6,6 +6,8 @@ import { clipDuration, renderMix } from '../audio/render'
 import { audioCtx } from '../audio/context'
 import { getShifted, keyLabel } from '../audio/pitch'
 import { fmt } from '../format'
+import { analyzeTempo, buildExtended, findDrop, planIntro, snapSelection, type BeatGrid } from '../audio/loop'
+import IntroExtender from './IntroExtender'
 
 interface Props {
   clip: Clip
@@ -16,9 +18,11 @@ interface Props {
   /** 같은 원본에서 바로 이어지는 앞/뒤 클립이 있을 때만 전달됨 */
   onMergePrev?: () => void
   onMergeNext?: () => void
+  /** 인트로를 늘린 새 오디오로 이 클립을 바꾼다. introLen = 늘린 인트로 길이 */
+  onExtendIntro: (buffer: AudioBuffer, introLen: number) => void
 }
 
-export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, onMergePrev, onMergeNext }: Props) {
+export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, onMergePrev, onMergeNext, onExtendIntro }: Props) {
   const box = useRef<HTMLDivElement>(null)
   const ws = useRef<WaveSurfer | null>(null)
   const range = useRef<Region | null>(null)
@@ -31,6 +35,17 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
   const [time, setTime] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [ready, setReady] = useState(false)
+  // 인트로 늘리기: 사용자가 끈 반복 구간(loopRaw)을 마디에 맞춘 것이 loop
+  const [introOpen, setIntroOpen] = useState(false)
+  const [loopRaw, setLoopRaw] = useState({ start: 0, end: 0 })
+  const [grid, setGrid] = useState<BeatGrid | null>(null)
+  const [snapOn, setSnapOn] = useState(true)
+  const [target, setTarget] = useState(30)
+  const [dropFound, setDropFound] = useState<number | null>(null)
+  const loopRegion = useRef<Region | null>(null)
+  const loopLabel = useRef<HTMLSpanElement | null>(null)
+  const seam = useRef<AudioBufferSourceNode | null>(null)
+  const [seamPlaying, setSeamPlaying] = useState(false)
   const timeRef = useRef(0)
   timeRef.current = time
   // 효과 넣어서 듣기: 렌더링한 결과를 재생하면서 파형 커서를 같이 움직인다
@@ -163,6 +178,8 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
         const start = Math.max(0, r.start)
         const end = Math.min(source.buffer.duration, r.end)
         if (end - start >= 0.1) changeRef.current({ start, end })
+      } else if (r === loopRegion.current) {
+        setLoopRaw({ start: Math.max(c.start, r.start), end: Math.min(c.end, r.end) })
       } else if (r === marker.current) {
         const climaxAt = Math.max(0.5, Math.min(r.start - c.start, c.end - c.start))
         changeRef.current({ buildUp: { ...c.buildUp, climaxAt } })
@@ -173,6 +190,7 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
       ws.current = null
       range.current = null
       marker.current = null
+      loopRegion.current = null
     }
   }, [source.url, source.buffer.duration])
 
@@ -200,6 +218,95 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
       marker.current = null
     }
   }, [ready, clip.start, clip.end, clip.buildUp.enabled, clip.buildUp.climaxAt])
+
+  // ── 인트로 늘리기 ──
+  const openIntro = () => {
+    if (introOpen) return setIntroOpen(false)
+    const c = clip
+    const d = c.end - c.start
+    const end = c.buildUp.climaxAt > 0.5 ? c.start + c.buildUp.climaxAt : c.start + Math.min(10, d / 3)
+    setLoopRaw({ start: c.start, end: Math.min(c.end, end) })
+    setIntroOpen(true)
+    setGrid(null)
+    setDropFound(null)
+    // 화면이 먼저 열리도록 분석은 다음 틱에
+    setTimeout(() => {
+      setGrid(analyzeTempo(source, c.start, Math.min(c.end, c.start + 90)))
+      // 터지는 지점을 직접 정해두지 않았다면 자동으로 찾아서 반복 구간 끝으로
+      if (c.buildUp.climaxAt <= 0.5) {
+        const drop = findDrop(source, c.start, c.end)
+        if (drop !== null) {
+          setDropFound(drop)
+          setLoopRaw({ start: c.start, end: drop })
+        }
+      }
+    }, 30)
+  }
+  useEffect(() => setIntroOpen(false), [clip.id])
+
+  const loop = useMemo(() => {
+    if (snapOn && grid) return snapSelection(source, grid, loopRaw.start, loopRaw.end, clip.start)
+    return { start: loopRaw.start, end: loopRaw.end, bars: null as number | null }
+  }, [snapOn, grid, loopRaw, source, clip.start])
+  const currentIntro = loop.end - clip.start
+  const plan = useMemo(() => planIntro(clip.start, loop.start, loop.end, Math.max(target, currentIntro)), [clip.start, loop, target, currentIntro])
+
+  // 반복 구간을 파형 위 민트색 구간으로 표시
+  useEffect(() => {
+    if (!ready || !ws.current) return
+    const regions = ws.current.getActivePlugins().find((p) => p instanceof RegionsPlugin) as RegionsPlugin | undefined
+    if (!introOpen || loop.end - loop.start < 0.1) {
+      loopRegion.current?.remove()
+      loopRegion.current = null
+      return
+    }
+    const text = `🔁 반복 구간${loop.bars ? ` · ${loop.bars}마디` : ''}`
+    if (!loopRegion.current && regions) {
+      const el = document.createElement('span')
+      Object.assign(el.style, { position: 'absolute', top: '4px', right: '4px', fontSize: '11px', background: '#2f8a68', color: '#fff', padding: '2px 8px', borderRadius: '999px', fontWeight: '600', whiteSpace: 'nowrap' })
+      loopLabel.current = el
+      loopRegion.current = regions.addRegion({ start: loop.start, end: loop.end, color: 'rgba(76, 191, 149, 0.30)', drag: true, resize: true, content: el })
+    } else if (loopRegion.current) {
+      loopRegion.current.setOptions({ start: loop.start, end: loop.end })
+    }
+    if (loopLabel.current) loopLabel.current.textContent = text
+  }, [ready, introOpen, loop])
+
+  const stopSeam = useCallback(() => {
+    try {
+      seam.current?.stop()
+    } catch {
+      /* 이미 멈춤 */
+    }
+    seam.current = null
+    setSeamPlaying(false)
+  }, [])
+  useEffect(() => stopSeam, [clip.id, introOpen, stopSeam])
+
+  /** 이음새 앞뒤 3초씩 들려주기 */
+  const previewSeam = async () => {
+    if (seam.current) return stopSeam()
+    stopFx()
+    ws.current?.pause()
+    const buf = buildExtended(source, clip.start, Math.min(clip.end, loop.end + 1), loop.start, loop.end, 2)
+    const at = loop.end - clip.start
+    const ctx = audioCtx()
+    await ctx.resume()
+    const node = ctx.createBufferSource()
+    node.buffer = buf
+    node.connect(ctx.destination)
+    const from = Math.max(0, at - 3)
+    node.start(ctx.currentTime + 0.05, from, at + 3 - from)
+    node.onended = () => seam.current === node && stopSeam()
+    seam.current = node
+    setSeamPlaying(true)
+  }
+
+  const applyIntro = () => {
+    stopSeam()
+    stopFx()
+    onExtendIntro(buildExtended(source, clip.start, clip.end, loop.start, loop.end, plan.repeats), plan.introLen)
+  }
 
   const playRange = () => {
     const w = ws.current
@@ -234,7 +341,8 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
       fadeIn: Math.max(clip.fadeIn, Math.min(2, dur / 10)),
       buildUp: {
         enabled: true,
-        climaxAt: Math.round(Math.min(dur * 0.55, Math.max(8, dur * 0.4)) * 10) / 10,
+        // 인트로 늘리기 등으로 이미 정해둔 터지는 지점이 있으면 그대로 둔다
+        climaxAt: bu.climaxAt > 0.5 ? bu.climaxAt : Math.round(Math.min(dur * 0.55, Math.max(8, dur * 0.4)) * 10) / 10,
         mode: bu.mode,
         startVolume: 0.3,
         swell: bu.swell ?? 3,
@@ -259,7 +367,14 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
       <div className="wave-wrap">
         <div className="wave" ref={box} />
         {ready && (
-          <div className={`playhead ${playing || fxPlaying ? 'on' : ''}`} style={{ left: `${(time / source.buffer.duration) * 100}%` }}>
+          <div
+            className={`playhead ${playing || fxPlaying ? 'on' : ''}`}
+            style={{
+              left: `${(time / source.buffer.duration) * 100}%`,
+              // 양 끝에서는 글자가 파형 밖으로 나가지 않게
+              transform: `translateX(${time / source.buffer.duration < 0.04 ? '0' : time / source.buffer.duration > 0.96 ? '-100%' : '-50%'})`,
+            }}
+          >
             {fmt(time)}
           </div>
         )}
@@ -347,6 +462,24 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
           />
         </div>
       </div>
+
+      <IntroExtender
+        open={introOpen}
+        onToggle={openIntro}
+        grid={grid}
+        onBpm={(bpm) => grid && setGrid({ ...grid, bpm })}
+        snapOn={snapOn}
+        onSnap={setSnapOn}
+        loop={loop}
+        currentIntro={currentIntro}
+        target={Math.max(target, Math.ceil(currentIntro))}
+        onTarget={setTarget}
+        plan={plan}
+        previewing={seamPlaying}
+        onPreview={previewSeam}
+        onApply={applyIntro}
+        dropFound={dropFound}
+      />
 
       <div className="buildup">
         <div className="panel-head">

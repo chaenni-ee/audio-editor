@@ -6,6 +6,7 @@ import { useHistory } from './history'
 import { renderMix } from './audio/render'
 import { bufferToWav } from './audio/wav'
 import { encodeMp3 } from './audio/mp3'
+import { fmt } from './format'
 import { audioCtx } from './audio/context'
 import { defaultBuildUp, uid, type Clip, type Source } from './types'
 
@@ -16,6 +17,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [mix, setMix] = useState<{ buffer: AudioBuffer; url: string; clips: Clip[] } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -100,6 +102,22 @@ export default function App() {
     }
     setClips((cs) => cs.flatMap((x) => (x.id === c.id ? [a, b] : [x])))
     setSelectedId(b.id)
+  }
+
+  /** 인트로를 늘린 오디오를 새 원본으로 추가하고 클립을 그걸로 바꾼다 (되돌리기 가능) */
+  const extendIntro = (clipId: string, buffer: AudioBuffer, introLen: number) => {
+    const c = clips.find((x) => x.id === clipId)
+    if (!c) return
+    const base = sources.get(c.sourceId)?.name.replace(/ \(인트로 \d+초\)$/, '') ?? '음원'
+    const src: Source = { id: uid(), name: `${base} (인트로 ${Math.round(introLen)}초)`, buffer, url: URL.createObjectURL(bufferToWav(buffer)) }
+    setSources((m) => new Map(m).set(src.id, src))
+    setClips((cs) =>
+      cs.map((x) => (x.id === clipId ? { ...x, sourceId: src.id, start: 0, end: buffer.duration, buildUp: { ...x.buildUp, climaxAt: introLen } } : x)),
+    )
+    setNotice(
+      `🔁 인트로를 ${fmt(introLen)}로 늘렸어요! 💥 터지는 지점도 늘린 인트로 끝(${fmt(introLen)})에 맞춰뒀어요. ` +
+        (c.buildUp.enabled ? '"효과 넣어서 듣기"로 들어보세요.' : '빌드업을 켜고 "작게 유지하다가 팡"을 골라보세요.'),
+    )
   }
 
   /** 같은 원본에서 끊김 없이 이어지는 두 클립(나눴던 클립)인지 */
@@ -215,6 +233,11 @@ export default function App() {
           ⚠️ {error} <small>(눌러서 닫기)</small>
         </p>
       )}
+      {notice && (
+        <p className="notice" onClick={() => setNotice(null)}>
+          {notice} <small>(눌러서 닫기)</small>
+        </p>
+      )}
       {loading && <p className="busy">{loading}</p>}
 
       {!clips.length ? (
@@ -246,6 +269,7 @@ export default function App() {
               onSplit={split}
               onMergePrev={canMerge(selectedIndex - 1) ? () => merge(selectedIndex - 1) : undefined}
               onMergeNext={canMerge(selectedIndex) ? () => merge(selectedIndex) : undefined}
+              onExtendIntro={(buf, len) => extendIntro(selected.id, buf, len)}
             />
           )}
           <MixPanel mixUrl={mix?.url ?? null} stale={stale} busy={busy} onRender={doRender} onExport={doExport} />
