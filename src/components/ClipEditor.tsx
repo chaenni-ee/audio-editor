@@ -237,6 +237,7 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
         climaxAt: Math.round(Math.min(dur * 0.55, Math.max(8, dur * 0.4)) * 10) / 10,
         mode: bu.mode,
         startVolume: 0.3,
+        swell: bu.swell ?? 3,
         muffle: true,
         pauseBeforeDrop: true,
         bassBoost: true,
@@ -371,7 +372,7 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
               </button>
               <button role="radio" aria-checked={bu.mode === 'hold'} className={bu.mode === 'hold' ? 'on' : ''} onClick={() => setBu({ mode: 'hold' })}>
                 <b>🤫 작게 유지하다가 팡</b>
-                <small>정한 볼륨으로 쭉 잔잔하게 유지하다가 클라이맥스에서 한 번에 팡</small>
+                <small>정한 볼륨으로 잔잔하게 유지하다가, 직전에 살짝 커지면서 팡</small>
                 <MiniGraph mode="hold" />
               </button>
             </div>
@@ -396,6 +397,18 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
                 note={bu.mode === 'hold' ? '처음부터 클라이맥스 직전까지 이 볼륨으로 쭉 유지돼요' : '작을수록 터질 때 차이가 커요'}
                 onChange={(v) => setBu({ startVolume: v / 100 }, 'sv')}
               />
+              {bu.mode === 'hold' && (
+                <Slider
+                  label="터지기 직전 살짝 커지는 시간"
+                  unit="초"
+                  value={bu.swell ?? 0}
+                  min={0}
+                  max={Math.max(0, Math.min(10, Math.floor((bu.climaxAt - 0.5) * 2) / 2))}
+                  step={0.5}
+                  note={(bu.swell ?? 0) > 0 ? `클라이맥스 ${(bu.swell ?? 0).toFixed(1)}초 전부터 서서히 커져요` : '0초: 작게 쭉 유지하다가 바로 팡'}
+                  onChange={(v) => setBu({ swell: v }, 'swell')}
+                />
+              )}
             </div>
             <div className="row checks">
               <label className="chip">
@@ -417,7 +430,7 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
 
 /** 빌드업 방식을 한눈에 보여주는 작은 볼륨 그래프 */
 function MiniGraph({ mode }: { mode: 'rise' | 'hold' }) {
-  const d = mode === 'rise' ? 'M2 30 C 30 29, 52 24, 66 16 L 68 30 L 72 30 L 72 4 L 98 4' : 'M2 22 L 68 22 L 68 30 L 72 30 L 72 4 L 98 4'
+  const d = mode === 'rise' ? 'M2 30 C 30 29, 52 24, 66 16 L 68 30 L 72 30 L 72 4 L 98 4' : 'M2 23 L 50 23 C 58 22.5, 63 20, 67 16 L 68 30 L 72 30 L 72 4 L 98 4'
   return (
     <svg viewBox="0 0 100 34" className="mini-graph" aria-hidden="true">
       <line x1="70" y1="0" x2="70" y2="34" className="mg-climax" />

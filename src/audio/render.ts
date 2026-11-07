@@ -52,10 +52,12 @@ function curve(fadeIn: boolean, n = 256) {
 /** 클라이맥스 직전까지 도달하는 볼륨. 여기서 100%로 한 번에 뛰어서 '팡' 하는 느낌이 난다. */
 export const PRE_DROP_VOLUME = 0.65
 
+const clampVol = (v: number) => Math.max(MIN_START_VOLUME, Math.min(1, v))
+
 /** 시작 볼륨에서 PRE_DROP_VOLUME까지 dB 기준으로 일정하게 커지는 곡선 (자연스러운 크레센도) */
 function crescendo(from: number, n = 256) {
   const c = new Float32Array(n)
-  const f = Math.max(MIN_START_VOLUME, Math.min(1, from))
+  const f = clampVol(from)
   const to = Math.max(f, PRE_DROP_VOLUME)
   for (let i = 0; i < n; i++) c[i] = f * Math.pow(to / f, i / (n - 1))
   return c
@@ -69,14 +71,22 @@ function schedule(ctx: BaseAudioContext, p: Placed, out: AudioNode, buffer: Audi
   let node: AudioNode = src
   const bu = clip.buildUp
   const climax = Math.max(0.5, Math.min(bu.climaxAt, dur))
+  const pause = bu.pauseBeforeDrop && climax > DROP_PAUSE * 3 ? DROP_PAUSE : 0
+  // hold 모드: 작게 유지하다가 클라이맥스 직전 swell초 동안만 살짝 커진다
+  const swell = bu.mode === 'hold' ? Math.max(0, Math.min(bu.swell ?? 0, climax - pause - 0.1)) : 0
+  const swellStart = at + climax - pause - swell
 
   if (bu.enabled && bu.muffle) {
     const lp = ctx.createBiquadFilter()
     lp.type = 'lowpass'
     lp.Q.value = 0.7
     if (bu.mode === 'hold') {
-      // 클라이맥스 전까지 먹먹한 소리를 유지하다가 한 번에 선명하게
+      // 먹먹한 소리를 유지하다가, 커지는 동안 조금 선명해지고, 터질 때 완전히 선명하게
       lp.frequency.setValueAtTime(700, at)
+      if (swell > 0.05) {
+        lp.frequency.setValueAtTime(700, swellStart)
+        lp.frequency.exponentialRampToValueAtTime(5000, swellStart + swell)
+      }
       lp.frequency.setValueAtTime(20000, at + climax)
     } else {
       lp.frequency.setValueAtTime(500, at)
@@ -96,9 +106,17 @@ function schedule(ctx: BaseAudioContext, p: Placed, out: AudioNode, buffer: Audi
   }
   if (bu.enabled) {
     const g = ctx.createGain()
-    const pause = bu.pauseBeforeDrop && climax > DROP_PAUSE * 3 ? DROP_PAUSE : 0
-    if (bu.mode === 'hold') g.gain.setValueAtTime(Math.max(MIN_START_VOLUME, Math.min(1, bu.startVolume)), at)
-    else g.gain.setValueCurveAtTime(crescendo(bu.startVolume), at, climax - pause)
+    if (bu.mode === 'hold') {
+      const sv = clampVol(bu.startVolume)
+      if (swell > 0.05) {
+        if (swellStart - at > EPS * 2) g.gain.setValueAtTime(sv, at)
+        g.gain.setValueCurveAtTime(crescendo(sv), swellStart, swell)
+      } else {
+        g.gain.setValueAtTime(sv, at)
+      }
+    } else {
+      g.gain.setValueCurveAtTime(crescendo(bu.startVolume), at, climax - pause)
+    }
     if (pause) g.gain.setValueAtTime(0, at + climax - pause + EPS)
     g.gain.setValueAtTime(1, at + climax + EPS)
     node.connect(g)

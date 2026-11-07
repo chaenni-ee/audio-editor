@@ -17,6 +17,8 @@ export interface BuildUp {
   climaxAt: number
   /** 시작 볼륨 (rise) 또는 클라이맥스 전까지 유지할 볼륨 (hold), 0.05 ~ 1 */
   startVolume: number
+  /** hold 모드에서 클라이맥스 직전 서서히 커지는 시간, 초 (0이면 바로 팡) */
+  swell: number
   /** 처음엔 먹먹하게(저역 통과 필터) 시작해서 점점 선명해짐 */
   muffle: boolean
   /** 클라이맥스 직전 짧은 정적 */
@@ -47,6 +49,7 @@ export const defaultBuildUp = (): BuildUp => ({
   mode: 'rise',
   climaxAt: 0,
   startVolume: 0.35,
+  swell: 3,
   muffle: true,
   pauseBeforeDrop: true,
   bassBoost: true,
