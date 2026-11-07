@@ -35,6 +35,8 @@ export interface Clip {
   fadeOut: number
   /** 볼륨 배율 (0 ~ 2) */
   gain: number
+  /** 키(음높이) 변경, 반음 단위. 템포는 그대로 */
+  pitch: number
   /** 앞 클립과 겹치는 크로스페이드 길이, 초 (첫 클립은 무시) */
   crossfade: number
   buildUp: BuildUp

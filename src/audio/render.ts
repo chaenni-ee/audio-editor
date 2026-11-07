@@ -1,4 +1,5 @@
 import type { Clip, Source } from '../types'
+import { getShifted } from './pitch'
 
 export const SAMPLE_RATE = 44100
 export const DROP_PAUSE = 0.25
@@ -60,10 +61,10 @@ function crescendo(from: number, n = 256) {
   return c
 }
 
-function schedule(ctx: BaseAudioContext, p: Placed, out: AudioNode) {
+function schedule(ctx: BaseAudioContext, p: Placed, out: AudioNode, buffer: AudioBuffer) {
   const { clip, at, dur } = p
   const src = ctx.createBufferSource()
-  src.buffer = p.source.buffer
+  src.buffer = buffer
 
   let node: AudioNode = src
   const bu = clip.buildUp
@@ -129,6 +130,8 @@ function schedule(ctx: BaseAudioContext, p: Placed, out: AudioNode) {
 export async function renderMix(clips: Clip[], sources: Map<string, Source>): Promise<AudioBuffer | null> {
   const { placed, total } = layout(clips, sources)
   if (!placed.length || total <= 0) return null
+  // 키를 바꾼 클립은 미리 음높이를 변환해 둔다 (템포·길이는 원본과 같음)
+  const buffers = await Promise.all(placed.map((p) => getShifted(p.source, p.clip.pitch || 0)))
   const ctx = new OfflineAudioContext(2, Math.ceil(total * SAMPLE_RATE), SAMPLE_RATE)
   // 볼륨을 올리거나 저음을 키웠을 때 소리가 깨지지 않도록 하는 안전 리미터
   const limiter = ctx.createDynamicsCompressor()
@@ -138,6 +141,6 @@ export async function renderMix(clips: Clip[], sources: Map<string, Source>): Pr
   limiter.attack.value = 0.003
   limiter.release.value = 0.1
   limiter.connect(ctx.destination)
-  for (const p of placed) schedule(ctx, p, limiter)
+  placed.forEach((p, i) => schedule(ctx, p, limiter, buffers[i]))
   return ctx.startRendering()
 }

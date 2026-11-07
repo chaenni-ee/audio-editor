@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Clip, Source } from '../types'
 import { clipDuration, layout } from '../audio/render'
 import { fmt } from '../format'
+import { keyLabel } from '../audio/pitch'
 
 interface Props {
   clips: Clip[]
@@ -52,6 +53,7 @@ export default function Timeline({ clips, sources, selectedId, onSelect, onMove,
           const tags = [
             c.fadeIn > 0 && `페이드인 ${c.fadeIn.toFixed(1)}s`,
             c.fadeOut > 0 && `페이드아웃 ${c.fadeOut.toFixed(1)}s`,
+            c.pitch !== 0 && `🎤 ${keyLabel(c.pitch)}`,
             c.buildUp.enabled && '💥 빌드업',
             c.gain !== 1 && `볼륨 ${Math.round(c.gain * 100)}%`,
           ].filter(Boolean) as string[]

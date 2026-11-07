@@ -43,7 +43,7 @@ export default function App() {
           const buffer = await audioCtx().decodeAudioData(await f.arrayBuffer())
           const src: Source = { id: uid(), name: f.name.replace(/\.[^.]+$/, ''), buffer, url: URL.createObjectURL(f) }
           newSources.push(src)
-          added.push({ id: uid(), sourceId: src.id, start: 0, end: buffer.duration, fadeIn: 0, fadeOut: 0, gain: 1, crossfade: 0, buildUp: defaultBuildUp() })
+          added.push({ id: uid(), sourceId: src.id, start: 0, end: buffer.duration, fadeIn: 0, fadeOut: 0, gain: 1, pitch: 0, crossfade: 0, buildUp: defaultBuildUp() })
         } catch {
           setError(`"${f.name}"은(는) 이 브라우저에서 읽을 수 없는 형식이에요.`)
         }
@@ -106,7 +106,7 @@ export default function App() {
   const canMerge = (i: number) => {
     const a = clips[i]
     const b = clips[i + 1]
-    return !!a && !!b && a.sourceId === b.sourceId && Math.abs(b.start - a.end) < 0.01
+    return !!a && !!b && a.sourceId === b.sourceId && a.pitch === b.pitch && Math.abs(b.start - a.end) < 0.01
   }
 
   const merge = (i: number) => {
@@ -121,7 +121,7 @@ export default function App() {
   }
 
   const doRender = async () => {
-    setBusy('모든 클립을 합치는 중…')
+    setBusy(clips.some((c) => c.pitch) ? '키를 바꾸고 모든 클립을 합치는 중…' : '모든 클립을 합치는 중…')
     try {
       const buffer = await renderMix(clips, sources)
       if (!buffer) return null

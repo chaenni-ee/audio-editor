@@ -4,6 +4,7 @@ import RegionsPlugin, { type Region } from 'wavesurfer.js/dist/plugins/regions.e
 import type { BuildUp, Clip, Source } from '../types'
 import { clipDuration, renderMix } from '../audio/render'
 import { audioCtx } from '../audio/context'
+import { getShifted, keyLabel } from '../audio/pitch'
 import { fmt } from '../format'
 
 interface Props {
@@ -35,6 +36,18 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
   // 효과 넣어서 듣기: 렌더링한 결과를 재생하면서 파형 커서를 같이 움직인다
   const fx = useRef<{ node: AudioBufferSourceNode; raf: number } | null>(null)
   const [fxPlaying, setFxPlaying] = useState(false)
+  const [fxLoading, setFxLoading] = useState(false)
+  // 키 변환은 시간이 조금 걸리므로 바꾸자마자 미리 계산해 둔다
+  const [keyReady, setKeyReady] = useState(true)
+  useEffect(() => {
+    if (!clip.pitch) return setKeyReady(true)
+    let alive = true
+    setKeyReady(false)
+    getShifted(source, clip.pitch).then(() => alive && setKeyReady(true), () => alive && setKeyReady(true))
+    return () => {
+      alive = false
+    }
+  }, [source, clip.pitch])
   const playFxRef = useRef<(from?: number) => void>(() => {})
 
   const stopFx = useCallback(() => {
@@ -54,8 +67,11 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
     stopFx()
     ws.current?.pause()
     const c = clipRef.current
-    const buf = await renderMix([{ ...c, crossfade: 0 }], new Map([[source.id, source]]))
+    setFxLoading(true)
+    const buf = await renderMix([{ ...c, crossfade: 0 }], new Map([[source.id, source]])).finally(() => setFxLoading(false))
     if (!buf) return
+    // 기다리는 사이 다른 클립으로 바꿨으면 재생하지 않음
+    if (clipRef.current.id !== c.id) return
     const t0 = from ?? timeRef.current
     const offset = t0 >= c.start && t0 < c.end - 0.2 ? t0 - c.start : 0
     const ctx = audioCtx()
@@ -206,6 +222,7 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
     clip.fadeIn > 0 && '페이드 인',
     clip.fadeOut > 0 && '페이드 아웃',
     clip.gain !== 1 && `볼륨 ${Math.round(clip.gain * 100)}%`,
+    clip.pitch !== 0 && `🎤 ${keyLabel(clip.pitch)}`,
     !isFirst && clip.crossfade > 0 && '크로스페이드',
     bu.enabled && (presetActive ? '💒 결혼식 프리셋' : '💥 빌드업'),
     bu.enabled && (bu.mode === 'hold' ? `🤫 ${Math.round(bu.startVolume * 100)}% 유지` : '📈 점점 커지게'),
@@ -264,7 +281,7 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
           {playing ? '⏸ 일시정지' : '▶ 원본 듣기 (효과 없음)'}
         </button>
         <button className={fxPlaying ? 'active' : flash ? 'pulse' : ''} onClick={() => (fxPlaying ? stopFx() : playFx())} disabled={!ready}>
-          {fxPlaying ? '⏹ 정지' : '🎧 효과 넣어서 듣기'}
+          {fxLoading ? '⏳ 준비 중…' : fxPlaying ? '⏹ 정지' : '🎧 효과 넣어서 듣기'}
         </button>
         <button onClick={() => onSplit(time)} disabled={!ready || time <= clip.start + 0.1 || time >= clip.end - 0.1} title="파형을 눌러 위치를 고른 뒤 누르세요">
           ✂️ {fmt(time)}에서 둘로 나누기
@@ -291,6 +308,27 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
           <h3>🌙 부드럽게 시작·끝내기</h3>
           <Slider label="페이드 인 (서서히 커짐)" unit="초" value={clip.fadeIn} min={0} max={maxFade} step={0.1} onChange={(v) => onChange({ fadeIn: v }, 'fadeIn')} />
           <Slider label="페이드 아웃 (서서히 작아짐)" unit="초" value={clip.fadeOut} min={0} max={maxFade} step={0.1} onChange={(v) => onChange({ fadeOut: v }, 'fadeOut')} />
+        </div>
+        <div className="group key">
+          <h3>🎤 키 조절</h3>
+          <div className="key-ctrl">
+            <button onClick={() => onChange({ pitch: Math.max(-6, clip.pitch - 1) }, 'pitch')} disabled={clip.pitch <= -6} aria-label="키 낮추기">
+              ▼ 낮추기
+            </button>
+            <div className="key-val">
+              <b>{keyLabel(clip.pitch)}</b>
+              <small>{clip.pitch === 0 ? '원래 키' : keyReady ? '✅ 준비 완료' : '⏳ 키 바꾸는 중…'}</small>
+            </div>
+            <button onClick={() => onChange({ pitch: Math.min(6, clip.pitch + 1) }, 'pitch')} disabled={clip.pitch >= 6} aria-label="키 높이기">
+              ▲ 높이기
+            </button>
+          </div>
+          <div className="row">
+            <button className="ghost small" disabled={clip.pitch === 0} onClick={() => onChange({ pitch: 0 })}>
+              ↺ 원키로
+            </button>
+            <small className="muted">빠르기는 그대로, 음높이만 반음씩 바뀌어요. ±4키를 넘으면 음색이 조금 달라질 수 있어요.</small>
+          </div>
         </div>
         <div className="group mix">
           <h3>🔊 볼륨 · 앞 곡과 잇기</h3>
