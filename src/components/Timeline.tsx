@@ -12,9 +12,11 @@ interface Props {
   onDuplicate: (id: string) => void
   onDelete: (id: string) => void
   onAdd: () => void
+  canMerge: (i: number) => boolean
+  onMerge: (i: number) => void
 }
 
-export default function Timeline({ clips, sources, selectedId, onSelect, onMove, onDuplicate, onDelete, onAdd }: Props) {
+export default function Timeline({ clips, sources, selectedId, onSelect, onMove, onDuplicate, onDelete, onAdd, canMerge, onMerge }: Props) {
   const [dragFrom, setDragFrom] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState<number | null>(null)
   const { placed, total } = layout(clips, sources)
@@ -57,6 +59,11 @@ export default function Timeline({ clips, sources, selectedId, onSelect, onMove,
             i > 0 && (
               <div className="link" key={`link-${c.id}`}>
                 {c.crossfade > 0 ? <span>🔀 {c.crossfade.toFixed(1)}s</span> : '→'}
+                {canMerge(i - 1) && (
+                  <button className="merge" onClick={() => onMerge(i - 1)} title="나눴던 두 클립을 다시 하나로 합쳐요">
+                    🔗 합치기
+                  </button>
+                )}
               </div>
             ),
             <div

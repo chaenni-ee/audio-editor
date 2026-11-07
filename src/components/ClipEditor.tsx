@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import RegionsPlugin, { type Region } from 'wavesurfer.js/dist/plugins/regions.esm.js'
 import type { BuildUp, Clip, Source } from '../types'
-import { clipDuration } from '../audio/render'
+import { clipDuration, renderMix } from '../audio/render'
+import { audioCtx } from '../audio/context'
 import { fmt } from '../format'
 
 interface Props {
@@ -11,11 +12,12 @@ interface Props {
   isFirst: boolean
   onChange: (patch: Partial<Clip>, key?: string) => void
   onSplit: (at: number) => void
-  onPreviewFx: () => void
-  previewingFx: boolean
+  /** 같은 원본에서 바로 이어지는 앞/뒤 클립이 있을 때만 전달됨 */
+  onMergePrev?: () => void
+  onMergeNext?: () => void
 }
 
-export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, onPreviewFx, previewingFx }: Props) {
+export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, onMergePrev, onMergeNext }: Props) {
   const box = useRef<HTMLDivElement>(null)
   const ws = useRef<WaveSurfer | null>(null)
   const range = useRef<Region | null>(null)
@@ -28,6 +30,78 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
   const [time, setTime] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [ready, setReady] = useState(false)
+  const timeRef = useRef(0)
+  timeRef.current = time
+  // 효과 넣어서 듣기: 렌더링한 결과를 재생하면서 파형 커서를 같이 움직인다
+  const fx = useRef<{ node: AudioBufferSourceNode; raf: number } | null>(null)
+  const [fxPlaying, setFxPlaying] = useState(false)
+  const playFxRef = useRef<(from?: number) => void>(() => {})
+
+  const stopFx = useCallback(() => {
+    const f = fx.current
+    if (!f) return
+    fx.current = null
+    cancelAnimationFrame(f.raf)
+    try {
+      f.node.stop()
+    } catch {
+      /* 이미 멈춤 */
+    }
+    setFxPlaying(false)
+  }, [])
+
+  const playFx = async (from?: number) => {
+    stopFx()
+    ws.current?.pause()
+    const c = clipRef.current
+    const buf = await renderMix([{ ...c, crossfade: 0 }], new Map([[source.id, source]]))
+    if (!buf) return
+    const t0 = from ?? timeRef.current
+    const offset = t0 >= c.start && t0 < c.end - 0.2 ? t0 - c.start : 0
+    const ctx = audioCtx()
+    await ctx.resume()
+    const node = ctx.createBufferSource()
+    node.buffer = buf
+    node.connect(ctx.destination)
+    const startedAt = ctx.currentTime + 0.05
+    node.start(startedAt, offset)
+    const tick = () => {
+      const f = fx.current
+      if (!f || f.node !== node) return
+      const t = offset + Math.max(0, ctx.currentTime - startedAt)
+      ws.current?.setTime(Math.min(c.start + t, c.end))
+      f.raf = requestAnimationFrame(tick)
+    }
+    fx.current = { node, raf: requestAnimationFrame(tick) }
+    node.onended = () => {
+      if (fx.current?.node === node) stopFx()
+    }
+    setFxPlaying(true)
+  }
+  playFxRef.current = playFx
+
+  // 다른 클립으로 바꾸거나 화면을 떠나면 효과 미리듣기 정지
+  useEffect(() => stopFx, [clip.id, stopFx])
+
+  // 효과를 들으면서 설정을 바꾸면 지금 위치부터 바뀐 소리로 다시 재생
+  const firstClipRender = useRef(true)
+  useEffect(() => {
+    if (firstClipRender.current) {
+      firstClipRender.current = false
+      return
+    }
+    if (!fx.current) return
+    const id = setTimeout(() => fx.current && playFxRef.current(), 250)
+    return () => clearTimeout(id)
+  }, [clip])
+
+  // 버튼을 눌렀을 때 잠깐 보여주는 안내
+  const [flash, setFlash] = useState<string | null>(null)
+  useEffect(() => {
+    if (!flash) return
+    const id = setTimeout(() => setFlash(null), 4000)
+    return () => clearTimeout(id)
+  }, [flash])
 
   // 원본이 바뀔 때만 파형을 새로 만든다
   useEffect(() => {
@@ -40,8 +114,8 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
       height: 128,
       waveColor: '#c9b8ff',
       progressColor: '#9b87f5',
-      cursorColor: '#ff7a95',
-      cursorWidth: 2,
+      cursorColor: '#e8507a',
+      cursorWidth: 3,
       barWidth: 2,
       barGap: 1,
       barRadius: 2,
@@ -60,6 +134,10 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
         stopAt.current = null
         w.pause()
       }
+    })
+    // 효과 미리듣기 중에 파형을 누르면 그 위치부터 다시 재생
+    w.on('interaction', (t) => {
+      if (fx.current) playFxRef.current(t)
     })
     w.on('play', () => setPlaying(true))
     w.on('pause', () => setPlaying(false))
@@ -111,6 +189,7 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
     const w = ws.current
     if (!w) return
     if (w.isPlaying()) return w.pause()
+    stopFx()
     const from = time >= clip.start && time < clip.end - 0.05 ? time : clip.start
     stopAt.current = clip.end
     w.setTime(from)
@@ -122,7 +201,17 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
   const setBu = (patch: Partial<BuildUp>, key?: string) => onChange({ buildUp: { ...bu, ...patch } }, key)
   const maxFade = Math.max(0.1, Math.floor(dur * 10) / 20)
 
-  const applyWeddingPreset = () =>
+  const presetActive = bu.enabled && bu.muffle && bu.pauseBeforeDrop && bu.bassBoost && Math.abs(bu.startVolume - 0.3) < 0.001
+  const activeFx = [
+    clip.fadeIn > 0 && '페이드 인',
+    clip.fadeOut > 0 && '페이드 아웃',
+    clip.gain !== 1 && `볼륨 ${Math.round(clip.gain * 100)}%`,
+    !isFirst && clip.crossfade > 0 && '크로스페이드',
+    bu.enabled && (presetActive ? '💒 결혼식 프리셋' : '💥 빌드업'),
+  ].filter(Boolean) as string[]
+
+  const applyWeddingPreset = () => {
+    setFlash(fxPlaying ? '💒 결혼식 프리셋 적용! 바뀐 소리로 다시 재생할게요.' : '💒 결혼식 프리셋이 적용됐어요! "🎧 효과 넣어서 듣기"로 들어보세요.')
     onChange({
       fadeIn: Math.max(clip.fadeIn, Math.min(2, dur / 10)),
       buildUp: {
@@ -134,6 +223,7 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
         bassBoost: true,
       },
     })
+  }
 
   return (
     <section className="panel editor">
@@ -146,20 +236,46 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
         </span>
       </div>
 
-      <div className="wave" ref={box} />
+      <div className="wave-wrap">
+        <div className="wave" ref={box} />
+        {ready && (
+          <div className={`playhead ${playing || fxPlaying ? 'on' : ''}`} style={{ left: `${(time / source.buffer.duration) * 100}%` }}>
+            {fmt(time)}
+          </div>
+        )}
+      </div>
       <p className="hint">💡 분홍색 구간이 실제로 쓰이는 부분이에요. 양 끝을 끌어서 자르고, 파형을 누르면 그 위치부터 들을 수 있어요.</p>
+
+      <div className={`nowbar ${playing || fxPlaying ? 'on' : ''}`}>
+        <span className="now-label">{fxPlaying ? '🎧 효과 재생 중' : playing ? '▶ 원본 재생 중' : '⏸ 멈춤'}</span>
+        <span className="now-time">{fmt(time)}</span>
+        <div className="progress" title="사용 구간 안에서의 위치">
+          <div style={{ width: `${Math.max(0, Math.min(100, ((time - clip.start) / dur) * 100))}%` }} />
+        </div>
+        <span className="muted">
+          구간 {fmt(Math.max(0, Math.min(dur, time - clip.start)))} / {fmt(dur)}
+        </span>
+      </div>
 
       <div className="row">
         <button className="primary" onClick={playRange} disabled={!ready}>
-          {playing ? '⏸ 일시정지' : '▶ 원본 듣기'}
+          {playing ? '⏸ 일시정지' : '▶ 원본 듣기 (효과 없음)'}
         </button>
-        <button onClick={onPreviewFx} disabled={!ready}>
-          {previewingFx ? '⏹ 정지' : '🎧 효과 넣어서 듣기'}
+        <button className={fxPlaying ? 'active' : flash ? 'pulse' : ''} onClick={() => (fxPlaying ? stopFx() : playFx())} disabled={!ready}>
+          {fxPlaying ? '⏹ 정지' : '🎧 효과 넣어서 듣기'}
         </button>
         <button onClick={() => onSplit(time)} disabled={!ready || time <= clip.start + 0.1 || time >= clip.end - 0.1} title="파형을 눌러 위치를 고른 뒤 누르세요">
           ✂️ {fmt(time)}에서 둘로 나누기
         </button>
+        {onMergePrev && <button onClick={onMergePrev}>🔗 앞 클립과 다시 합치기</button>}
+        {onMergeNext && <button onClick={onMergeNext}>🔗 뒤 클립과 다시 합치기</button>}
       </div>
+
+      <div className="fx-status">
+        <span>🎚️ 이 클립에 적용된 효과:</span>
+        {activeFx.length ? activeFx.map((f) => <span className="fx-tag" key={f}>{f}</span>) : <span className="muted">없음 (원본 그대로)</span>}
+      </div>
+      {flash && <div className="flash">{flash}</div>}
 
       <div className="groups">
         <div className="group cut">
@@ -200,8 +316,10 @@ export default function ClipEditor({ clip, source, isFirst, onChange, onSplit, o
           </label>
         </div>
         <div className="row">
-          <button onClick={applyWeddingPreset}>💒 결혼식 입장 프리셋</button>
-          <span className="muted">작고 먹먹하게 시작 → 점점 커지다가 → 잠깐 멈춘 뒤 확 터져요.</span>
+          <button className={presetActive ? 'applied' : ''} onClick={applyWeddingPreset}>
+            {presetActive ? '✅ 결혼식 입장 프리셋 적용됨' : '💒 결혼식 입장 프리셋 적용하기'}
+          </button>
+          <span className="muted">작고 먹먹하게 시작 → 점점 커지다가 → 잠깐 멈춘 뒤 확 터져요. 누르면 바로 이 클립에 적용돼요.</span>
         </div>
         {bu.enabled && (
           <>

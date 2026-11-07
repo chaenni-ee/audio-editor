@@ -6,10 +6,9 @@ import { useHistory } from './history'
 import { renderMix } from './audio/render'
 import { bufferToWav } from './audio/wav'
 import { encodeMp3 } from './audio/mp3'
+import { audioCtx } from './audio/context'
 import { defaultBuildUp, uid, type Clip, type Source } from './types'
 
-let decodeCtx: AudioContext | null = null
-const audioCtx = () => (decodeCtx ??= new AudioContext())
 
 export default function App() {
   const [sources, setSources] = useState<Map<string, Source>>(new Map())
@@ -20,8 +19,6 @@ export default function App() {
   const [dragging, setDragging] = useState(false)
   const [mix, setMix] = useState<{ buffer: AudioBuffer; url: string; clips: Clip[] } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
-  const fxPlayer = useRef<AudioBufferSourceNode | null>(null)
-  const [previewingFx, setPreviewingFx] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const selected = clips.find((c) => c.id === selectedId) ?? null
@@ -105,31 +102,23 @@ export default function App() {
     setSelectedId(b.id)
   }
 
-  const stopFx = () => {
-    fxPlayer.current?.stop()
-    fxPlayer.current = null
-    setPreviewingFx(false)
+  /** 같은 원본에서 끊김 없이 이어지는 두 클립(나눴던 클립)인지 */
+  const canMerge = (i: number) => {
+    const a = clips[i]
+    const b = clips[i + 1]
+    return !!a && !!b && a.sourceId === b.sourceId && Math.abs(b.start - a.end) < 0.01
   }
 
-  const previewFx = async () => {
-    if (fxPlayer.current) return stopFx()
-    if (!selected) return
-    const buf = await renderMix([{ ...selected, crossfade: 0 }], sources)
-    if (!buf) return
-    const ctx = audioCtx()
-    await ctx.resume()
-    const node = ctx.createBufferSource()
-    node.buffer = buf
-    node.connect(ctx.destination)
-    node.onended = () => {
-      if (fxPlayer.current === node) stopFx()
-    }
-    node.start()
-    fxPlayer.current = node
-    setPreviewingFx(true)
+  const merge = (i: number) => {
+    if (!canMerge(i)) return
+    const a = clips[i]
+    const b = clips[i + 1]
+    const aDur = a.end - a.start
+    const buildUp = a.buildUp.enabled ? a.buildUp : b.buildUp.enabled ? { ...b.buildUp, climaxAt: b.buildUp.climaxAt + aDur } : a.buildUp
+    const merged: Clip = { ...a, end: b.end, fadeOut: b.fadeOut, buildUp }
+    setClips([...clips.slice(0, i), merged, ...clips.slice(i + 2)])
+    setSelectedId(a.id)
   }
-  // 다른 클립으로 바꾸면 효과 미리듣기 정지
-  useEffect(() => stopFx, [selectedId])
 
   const doRender = async () => {
     setBusy('모든 클립을 합치는 중…')
@@ -246,7 +235,7 @@ export default function App() {
         </>
       ) : (
         <>
-          <Timeline clips={clips} sources={sources} selectedId={selectedId} onSelect={setSelectedId} onMove={moveClip} onDuplicate={duplicate} onDelete={remove} onAdd={() => fileInput.current?.click()} />
+          <Timeline clips={clips} sources={sources} selectedId={selectedId} onSelect={setSelectedId} onMove={moveClip} onDuplicate={duplicate} onDelete={remove} onAdd={() => fileInput.current?.click()} canMerge={canMerge} onMerge={merge} />
           {selected && selectedSource && (
             <ClipEditor
               key={selected.sourceId}
@@ -255,8 +244,8 @@ export default function App() {
               isFirst={selectedIndex === 0}
               onChange={(patch, key) => updateClip(selected.id, patch, key)}
               onSplit={split}
-              onPreviewFx={previewFx}
-              previewingFx={previewingFx}
+              onMergePrev={canMerge(selectedIndex - 1) ? () => merge(selectedIndex - 1) : undefined}
+              onMergeNext={canMerge(selectedIndex) ? () => merge(selectedIndex) : undefined}
             />
           )}
           <MixPanel mixUrl={mix?.url ?? null} stale={stale} busy={busy} onRender={doRender} onExport={doExport} />
